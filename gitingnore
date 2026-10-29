@@ -1,3 +1,2 @@
-.github/workflows/neoload-demowebshop.yml
-demowebshop_test/default.yaml
-.gitignore
+   demowebshop_test/data/
+   data/users.csv
