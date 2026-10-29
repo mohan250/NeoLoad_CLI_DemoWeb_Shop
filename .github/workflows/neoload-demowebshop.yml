@@ -1,4 +1,4 @@
-name: NeoLoad Demo Web Shop with User Data
+name: NeoLoad Controller Project (zip) with User Data
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
         default: 'y1e48'
       scenario:
         required: true
-        description: 'Scenario name in demowebshop_test/default.yaml (10 users)'
+        description: 'Scenario name in the NeoLoad Controller project (10 users)'
         default: 'scenario1'
       data_file:
         required: true
@@ -29,29 +29,17 @@ env:
   ZONE_ID: ${{ github.event.inputs.zone_id }}
   SCENARIO: ${{ github.event.inputs.scenario }}
   DATA_SOURCE: ${{ github.event.inputs.data_file }}
-  DATA_TARGET: demowebshop_test\data\users.csv
+  PROJECT_ZIP: Git_NeoLoad_RD_UserCred.zip
+  DATA_TARGET: data\users.csv
   MIN_ROWS: '10'
 
 jobs:
-  neoload_demowebshop:
-    name: NeoLoad Demo Web Shop run
+  neoload_nlp_zip:
+    name: NeoLoad Controller project run
     runs-on: self-hosted
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4
-
-      - name: Copy test data from the shared folder
-        shell: powershell
-        run: |
-          $src = $env:DATA_SOURCE
-          if (-not (Test-Path -LiteralPath $src)) { throw "Data file not found: $src" }
-          New-Item -ItemType Directory -Force -Path (Split-Path $env:DATA_TARGET) | Out-Null
-          $lines = @(Get-Content -LiteralPath $src | Where-Object { $_.Trim() -ne '' } | ForEach-Object { $_ -replace "`t", "," })
-          Set-Content -LiteralPath $env:DATA_TARGET -Value $lines -Encoding ascii
-          $rows = $lines.Count - 1
-          Write-Host "Header line: $($lines[0])"
-          Write-Host "Data rows copied: $rows"
-          if ($rows -lt [int]$env:MIN_ROWS) { throw "Need at least $env:MIN_ROWS data rows, found $rows" }
 
       - name: Install NeoLoad CLI
         run: pip install -U neoload
@@ -67,17 +55,38 @@ jobs:
           neoload test-settings
           --zone ${{ env.ZONE_ID }}
           --scenario ${{ env.SCENARIO }}
-          createorpatch "DemoWebShop UserData"
+          createorpatch "DemoWebShop NLP"
 
-      - name: Upload the NeoLoad project folder
-        run: neoload project --path demowebshop_test upload
+      - name: Unpack the project, add the user data and upload
+        shell: powershell
+        run: |
+          $zip = $env:PROJECT_ZIP
+          $src = $env:DATA_SOURCE
+          if (-not (Test-Path -LiteralPath $zip)) { throw "Project zip not found: $zip" }
+          if (-not (Test-Path -LiteralPath $src)) { throw "Data file not found: $src" }
+          if (Test-Path nlp_project) { Remove-Item -Recurse -Force nlp_project }
+          Expand-Archive -LiteralPath $zip -DestinationPath nlp_project -Force
+          $nlp = Get-ChildItem -Path nlp_project -Recurse -Filter *.nlp | Select-Object -First 1
+          if (-not $nlp) { throw "No .nlp file found inside $zip" }
+          $dir = $nlp.DirectoryName
+          Write-Host "Project file: $($nlp.Name)"
+          $target = Join-Path $dir $env:DATA_TARGET
+          New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
+          $lines = @(Get-Content -LiteralPath $src | Where-Object { $_.Trim() -ne '' } | ForEach-Object { $_ -replace "`t", "," })
+          Set-Content -LiteralPath $target -Value $lines -Encoding ascii
+          $rows = $lines.Count - 1
+          Write-Host "Header line: $($lines[0])"
+          Write-Host "Data rows copied: $rows"
+          if ($rows -lt [int]$env:MIN_ROWS) { throw "Need at least $env:MIN_ROWS data rows, found $rows" }
+          neoload project --path "$dir" upload
+          if ($LASTEXITCODE -ne 0) { throw "neoload project upload failed" }
 
       - name: NeoLoad run test
         run: >-
           neoload run
           --external-url ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           --external-url-label "Github Action Run ${{ github.run_number }}"
-          --name "Demo Web Shop - Github build ${{ github.run_number }}"
+          --name "Demo Web Shop NLP - Github build ${{ github.run_number }}"
           --description "Started from Github Actions"
 
       - name: Generate Test Report
