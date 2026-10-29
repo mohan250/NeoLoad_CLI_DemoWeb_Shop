@@ -1,0 +1,94 @@
+name: NeoLoad Demo Web Shop with User Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        required: true
+        description: 'NeoLoad Web Api Url'
+        default: 'https://neoload-api.saas.neotys.com/'
+      zone_id:
+        required: true
+        description: 'Zone identifier'
+        default: 'y1e48'
+      scenario:
+        required: true
+        description: 'Scenario name in demowebshop_test/default.yaml (10 users)'
+        default: 'scenario1'
+      data_file:
+        required: true
+        description: 'Full path of the users CSV on the runner PC'
+        default: 'C:\temp\Credentials.csv'
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  API_URL: ${{ github.event.inputs.api_url }}
+  ZONE_ID: ${{ github.event.inputs.zone_id }}
+  SCENARIO: ${{ github.event.inputs.scenario }}
+  DATA_SOURCE: ${{ github.event.inputs.data_file }}
+  DATA_TARGET: demowebshop_test\data\users.csv
+  MIN_ROWS: '10'
+
+jobs:
+  neoload_demowebshop:
+    name: NeoLoad Demo Web Shop run
+    runs-on: self-hosted
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      - name: Copy test data from the shared folder
+        shell: powershell
+        run: |
+          $src = $env:DATA_SOURCE
+          if (-not (Test-Path -LiteralPath $src)) { throw "Data file not found: $src" }
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:DATA_TARGET) | Out-Null
+          $lines = @(Get-Content -LiteralPath $src | Where-Object { $_.Trim() -ne '' } | ForEach-Object { $_ -replace "`t", "," })
+          Set-Content -LiteralPath $env:DATA_TARGET -Value $lines -Encoding ascii
+          $rows = $lines.Count - 1
+          Write-Host "Header line: $($lines[0])"
+          Write-Host "Data rows copied: $rows"
+          if ($rows -lt [int]$env:MIN_ROWS) { throw "Need at least $env:MIN_ROWS data rows, found $rows" }
+
+      - name: Install NeoLoad CLI
+        run: pip install -U neoload
+
+      - name: Login to NeoLoad Web
+        run: >-
+          neoload login
+          --url ${{ env.API_URL }}
+          ${{ secrets.NEOLOAD_TOKEN }}
+
+      - name: Prepare NeoLoad test
+        run: >-
+          neoload test-settings
+          --zone ${{ env.ZONE_ID }}
+          --scenario ${{ env.SCENARIO }}
+          createorpatch "DemoWebShop UserData"
+
+      - name: Upload the NeoLoad project folder
+        run: neoload project --path demowebshop_test upload
+
+      - name: NeoLoad run test
+        run: >-
+          neoload run
+          --external-url ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          --external-url-label "Github Action Run ${{ github.run_number }}"
+          --name "Demo Web Shop - Github build ${{ github.run_number }}"
+          --description "Started from Github Actions"
+
+      - name: Generate Test Report
+        id: report
+        if: ${{ success() }}
+        run: neoload test-results junitsla
+
+      - name: Publish Test Report
+        if: steps.report.outcome == 'success'
+        uses: scacap/action-surefire-report@v1
+        with:
+          report_paths: junit-sla.xml
+          fail_on_test_failures: true
+          fail_if_no_tests: false
