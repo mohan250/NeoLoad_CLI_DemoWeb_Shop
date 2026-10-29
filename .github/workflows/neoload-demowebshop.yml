@@ -13,7 +13,7 @@ on:
         default: 'y1e48'
       scenario:
         required: true
-        description: 'Scenario name in the NeoLoad Controller project (10 users)'
+        description: 'Scenario name in the NeoLoad Controller project (1 users)'
         default: 'scenario1'
       data_file:
         required: true
@@ -31,7 +31,7 @@ env:
   DATA_SOURCE: ${{ github.event.inputs.data_file }}
   PROJECT_ZIP: Git_NeoLoad_RD_UserCred.zip
   DATA_TARGET: data\users.csv
-  MIN_ROWS: '10'
+  MIN_ROWS: '1'
 
 jobs:
   neoload_nlp_zip:
