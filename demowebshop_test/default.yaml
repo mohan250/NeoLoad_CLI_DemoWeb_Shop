@@ -47,7 +47,7 @@ user_paths:
                   server: webshop
                   headers:
                     - Content-Type: application/x-www-form-urlencoded
-                  body: Email=${creds.Email}&Password=${creds.Password}&RememberMe=false
+                  body: Email=${creds.Username}&Password=${creds.Password}&RememberMe=false
         - transaction:
             name: check login
             steps:
